@@ -1,15 +1,23 @@
 #### gFunc ####
-gFunc = function(mu, beta){
-  theta = rbind(mu, beta) #vec(r,1)
-  g = sapply(1:length(yVec), 
-             function(i){zMat[,i] * (yVec[i] - t(zMat[,i]) %*% theta)})
-  return(g) #mat(r,n)
+gFunc = function(kesi, beta){
+  theta = rbind(kesi, beta) #vec(r,1)
+  yVec_pair=deltaMat %*% matrix(yVec,ncol=1)
+  pair=function(i){
+    z=yVec_pair[i,] - t(zMat[,i]) %*% theta
+    if(z==0){
+      return(epsilon)
+    }
+    return(z)
+  }
+  g = sapply(1:length(yVec_pair), 
+             function(i){zMat[,i] * pair(i)})
+  return(g) #mat(r,m)
 }
 
 gFuncFir = function(k){
-  gFir = sapply(1:length(yVec), 
+  gFir = sapply(1:m, 
                 function(i){- zMat[,i] * zMat[k,i]})
-  return(gFir) #mat(r,n)
+  return(gFir) #mat(r,m)
 }
 
 
@@ -60,13 +68,12 @@ penalApprFunc = function(x0,x,yita){
 
 #### lFunc ####
 lFunc = function(params,yitaVec){
-  mu = params[[1]]; beta = params[[2]];
-  lambda = params[[3]]; kesi = params[[4]]
+  kesi = params[[1]]; beta = params[[2]];
+  lambda = params[[3]]
     
-  fir = sum(sapply(1 + t(lambda) %*% gFunc(mu,beta), logFunc))
-  
-  sec = n * sum(sapply(abs(kesi), penalFunc, yitaVec[1]))
-  thr = n * sum(sapply(abs(lambda), penalFunc,yitaVec[2]))
-  
-  return(fir + sec - thr)
+  fir = sum(sapply(1 + t(lambda) %*% gFunc(kesi,beta), logFunc))
+  sec = m * sum(sapply(abs(kesi), penalFunc, yitaVec[1]))
+  thr = m * sum(sapply(abs(lambda)[1:m], penalFunc,yitaVec[2])) #只对lambda的前m个分量做惩罚
+  fth = m * sum(DMat %*% kesi)
+  return(fir + sec - thr + fth)
 }

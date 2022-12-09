@@ -1,41 +1,50 @@
 #--------------------------- Iteration -------------------------------
 computeBIC.function = function(yitaVec, initParams){
-  # r = computeR.function(initParams)
-  r = 1
+  # R = computeR.function(initParams)
+  R = 1
   j=0
   oldParams = initParams
   
-  while(r >= epsilon & j<10000){
+  while(R >= epsilon & j<10000){
     #使用j的原因是防止迭代过多次仍然不能收敛，用j控制一下让能跑出来结果
     newParams = iterate.function(oldParams,yitaVec)
-    r = computeR.function(newParams)
+    R = computeR.function(oldParams,newParams)
     oldParams = newParams
     j=j+1
+    print(j)
   }
   
-  newMu = newParams[[1]]
-  k = length(unique(newMu))
+  k = sum(abs(newParams[[1]])>epsilon) # kesi向量的非零个数
   BIC = 2 * lFunc(newParams, yitaVec) + log(n) * (k + p)
   
   return(list(BIC,newParams))
 } 
 
 
-computeR.function = function(params){
-  mu = params[[1]]; kesi = params[[4]]
-  r = sqrt( sum( (deltaMat %*% mu - kesi) ^ 2 ) )
-  return(r)
+computeR.function = function(oldParams,newParams){
+  oldKesi = oldParams[[1]]; newKesi = newParams[[1]]
+  R = max(abs(oldKesi-newKesi))
+  return(R)
 }
 
 
 iterate.function = function(oldParams,yitaVec){
-  oldMu = oldParams[[1]]; oldBeta = oldParams[[2]]
-  oldLambda = oldParams[[3]]; oldKesi = oldParams[[4]]
-  oldNu = oldParams[[5]]
+  oldKesi = oldParams[[1]]; oldBeta = oldParams[[2]]
+  oldLambda = oldParams[[3]]
   
-  newMu = iterateMu.function(oldMu, oldBeta, oldLambda, oldKesi, oldNu)
+  # 迭代kesi及lambda
+  for(k in 1:m){
+    temp=iterateKesi.function(k, oldKesi, oldBeta, oldLambda, yitaVec[1])
+    #update kesi_k
+    oldKesi=temp[[1]]
+    #the update of lambda while updating kesi_k
+    oldLambda=temp[[2]]
+  }
+  newKesi=oldKesi
+  
+  # 迭代beta及lambda
   for(k in 1:p){
-    temp=iterateBeta.function(k, oldBeta, newMu, oldLambda, yitaVec[2])
+    temp=iterateBeta.function(k, newKesi, oldBeta, oldLambda, yitaVec[2])
     #update beta_k
     oldBeta=temp[[1]]
     #the update of lambda while updating beta_k
@@ -43,98 +52,80 @@ iterate.function = function(oldParams,yitaVec){
   }
   newBeta = oldBeta
   newLambda = oldLambda
-  newDelta = iterateDelta.function(newMu,oldNu)
-  newKesi = iterateKesi.function(newDelta,yitaVec[1])
-  newNu = iterateNu.function(oldNu,newMu,newKesi)
   
-  newParams = list(newMu, newBeta, newLambda, newKesi, newNu)
+  newParams = list(newKesi, newBeta, newLambda)
   return(newParams)
 }
 
 
-iterateMu.function = function(oldMu, oldBeta, oldLambda, oldKesi, oldNu){
-  gMat = gFunc(oldMu, oldBeta)
-  myfunc = function(gi){logFuncFir(1 + t(oldLambda) %*% gi)}
-  logFirSeq = apply(gMat,2,myfunc)
+iterateKesi.function = function(k, oldKesi, oldBeta, oldLambda, yita){
+  oldKesi_k = oldKesi[k]
+  sijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
+  uijkSeq = t(oldLambda) %*% gFuncFir(k)
   
-  fir = a/n * rowSums(sapply(
-    1:n, function(i){logFirSeq[i] * eMat[,i] %*% t(zMat[,i]) %*% oldLambda}))
-  sec = a * v * t(deltaMat) %*% (deltaMat %*% oldMu - oldKesi + 1/v * oldNu)
-  newMu = oldMu + fir - sec
-  return(newMu)
+  logFirSeq = sapply(sijSeq,logFuncFir)
+  logSecSeq = sapply(sijSeq,logFuncSec)
+  
+  numerator = sum(logFirSeq * uijkSeq) + 
+    m*penalFuncFir(abs(oldKesi_k),yita)*ifelse(oldKesi_k>0,1,ifelse(oldKesi_k<0,-1,0)) + m*sum(DMat[,k])
+  denominator = sum(logSecSeq * uijkSeq^2) +m*penalFuncSec(abs(oldKesi_k),yita)
+  
+  newKesi_k = oldKesi_k - numerator/denominator
+  newKesi = oldKesi
+  newKesi[k] = newKesi_k
+
+  newLambda = sapply(1:r, iterateLambda.function,
+                     oldLambda, newKesi, oldBeta, yita) 
+  
+  return(list(newKesi,newLambda))
 }
 
 
-iterateBeta.function = function(k, oldBeta, newMu, oldLambda, yita){
+iterateBeta.function = function(k, oldKesi, oldBeta, oldLambda, yita){
   # print(paste("k:",k))
   oldBeta_k = oldBeta[k]
-  simSeq = 1 + t(oldLambda) %*% gFunc(newMu, oldBeta)
-  wikmSeq = t(oldLambda) %*% gFuncFir(n+k)
+  sijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
+  wijkSeq = t(oldLambda) %*% gFuncFir(m+k)
   
-  logFirSeq = sapply(simSeq,logFuncFir)
-  logSecSeq = sapply(simSeq,logFuncSec)
+  logFirSeq = sapply(sijSeq,logFuncFir)
+  logSecSeq = sapply(sijSeq,logFuncSec)
   
-  numerator = sum(logFirSeq * wikmSeq)
-  denominator = sum(logSecSeq * wikmSeq^2)
-  
+  numerator = sum(logFirSeq * wijkSeq)
+  denominator = sum(logSecSeq * wijkSeq^2)
   
   newBeta_k = oldBeta_k - numerator/denominator
   newBeta = oldBeta
   newBeta[k] = newBeta_k
-  #对beta某个分量的更新
-  newLambda = sapply(1:r, iterateLambda.function, oldLambda, newMu, newBeta, yita)
+
+  newLambda = sapply(1:r, iterateLambda.function,
+                     oldLambda, oldKesi, newBeta, yita)
   
   return(list(newBeta,newLambda))
 }
 
 
-iterateLambda.function = function(s, oldLambda, newMu, oldBeta, yita){
+iterateLambda.function = function(s, oldLambda, oldKesi, oldBeta, yita){
   # print(paste("s:",s))
   oldLambda_s = oldLambda[s]
-  timSeq = 1 + t(oldLambda) %*% gFunc(newMu,oldBeta)
-  gisThetaSeq = gFunc(newMu,oldBeta)[s,]
+  tijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
+  gisThetaSeq = gFunc(oldKesi, oldBeta)[s,]
   
-  logFirSeq = sapply(timSeq,logFuncFir)
-  logSecSeq = sapply(timSeq,logFuncSec)
+  logFirSeq = sapply(tijSeq,logFuncFir)
+  logSecSeq = sapply(tijSeq,logFuncSec)
   
-  numerator = sum(logFirSeq * gisThetaSeq) - 
-    n*penalFuncFir(abs(oldLambda_s),yita)*ifelse(oldLambda_s>0,1,-1)
-  denominator = sum(logSecSeq * gisThetaSeq^2) - 
-    n*penalFuncSec(abs(oldLambda_s),yita)
+  if(s<=m){
+    numerator = sum(logFirSeq * gisThetaSeq) - 
+      m*penalFuncFir(abs(oldLambda_s),yita)*ifelse(oldLambda_s>0,1,ifelse(oldLambda_s<0,-1,0))
+    denominator = sum(logSecSeq * gisThetaSeq^2) - 
+      m*penalFuncSec(abs(oldLambda_s),yita)
+  }
+  else{
+    numerator = sum(logFirSeq * gisThetaSeq)
+    denominator = sum(logSecSeq * gisThetaSeq^2)
+  }
+
   newLambda_s = oldLambda_s - numerator/denominator
-  
-  # newLambda = oldLambda
-  # newLambda[s] = newLambda_s
+
   return(newLambda_s)
 }
 
-iterateDelta.function = function(newMu,oldNu){
-  
-  newDelta = deltaMat %*% newMu + 1/v * oldNu
-  return(newDelta)
-}
-
-iterateNu.function = function(oldNu,newMu,newKesi){
-  newNu = oldNu + v * (deltaMat %*% newMu - newKesi)
-  return(newNu)
-}
-
-
-iterateKesi.function=function(newDelta,yita){
-  ST=function(t,lambda){
-    return(sign(t)*ifelse(abs(t)-lambda>0,abs(t)-lambda,0))
-  }
-  
-  update.function=function(delta,yita){
-    if(abs(delta)<=(yita+yita/v)){
-      return(ST(delta,yita/v))
-    }else if(abs(delta)<=b*yita){
-      return(ST(delta,b*yita/((b-1)*v))/(1-1/((b-1)*v)))
-    }else{
-      return(delta)
-    }
-  }
-  
-  newKesi = sapply(newDelta, update.function, yita)
-  return(matrix(newKesi,ncol=1))
-}

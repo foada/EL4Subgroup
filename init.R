@@ -1,14 +1,15 @@
 #---------------------------Init Function-------------------------------
+library(MASS)
 initXY.function = function(){
   # 模拟自变量X, 得到数值矩阵xMat
   set.seed(123)
   sd = 1 ; pho = 0.5
   V = (sd ^ 2) * sapply(1:p, function(x){pho ^ abs(x - c(1:p))})
-  xMat = t( mvrnorm(n = n, mu = rep(0, 10), V) )
+  xMat = t( mvrnorm(n = n, mu = rep(0, p), V) )
   
   # 生成响应值yVec
   beta = runif(p, min = 0.5, max = 1) #均匀分布生成回归系数beta(真实值)
-  mu = -2+4*rbinom(n, 1, 0.5) #生成均值向量(真实值)
+  mu = rep(c(-2,2),each=n/2) #生成均值向量(真实值)
   err = rnorm(n, 0, 0.5) #生成随机误差项
   yVec = mu + t(xMat) %*% beta + err
   
@@ -18,56 +19,54 @@ initXY.function = function(){
 initParams.function = function(){
   # 初始化 μ 及 β
   initBeta = solve( xMat %*% t(xMat) ) %*% xMat %*% (yVec-mu)
-  initMu = yVec - t(xMat) %*% initBeta
+  initMu = yVec - t(xMat) %*% initBeta +rnorm(n, 0, 0.5)
+  #初始化kesi和theta
+  initKesi = deltaMat %*% initMu
+  initTheta = rbind(initKesi,initBeta)
   
   # 初始化λ
   initLambda = matrix(0, nrow=r, ncol=1)
   mFir=function(lambda){
-    g = sapply(1:length(err), 
-               function(i){zMat[,i] * err[i]})
+    g = gFunc(initKesi,initBeta)
     logstarFir=sapply(1 + t(lambda) %*% g,logFuncFir)
-    lambdaFir=-rowSums(sapply(1:n,function(i){logstarFir[i]*g[,i]}))
+    lambdaFir=-rowSums(sapply(1:m,function(i){logstarFir[i]*g[,i]}))
     return(matrix(lambdaFir,ncol=1))
   }
   mSec=function(lambda){
-    g = sapply(1:length(err), 
-               function(i){zMat[,i] * err[i]})
+    g = gFunc(initKesi,initBeta)
     logstarSec=sapply(1 + t(lambda) %*% g,logFuncSec)
-    m=array(0,dim=c(r,r,n))
-    for(i in 1:n){
-      m[,,i]=logstarSec[i]*g[,i]%*%t(g[,i])
+    M=array(0,dim=c(r,r))
+    for(i in 1:m){
+      M=M+logstarSec[i]*g[,i]%*%t(g[,i])
     }
-    return(-apply(m,1:2,sum))
+    gc() # 清除冗余内存
+    return(-M)
   }
   #Newton method
   newton_metod=function(oldLambda){
     r=1
-    k=0
+    #k=0
     while (r>epsilon) {
       newLambda=oldLambda-ginv(mSec(oldLambda))%*%mFir(oldLambda)
       r= sqrt(sum(mFir(newLambda)^2))
       oldLambda=newLambda
-      k=k+1
+      #k=k+1
     }
-    return(list(oldLambda,k))
+    return(oldLambda)
   }
-  jieguo=newton_metod(initLambda)
-  initLambda=jieguo[[1]]
-  k=jieguo[[2]]
+  initLambda=newton_metod(initLambda)
+  #initLambda=jieguo[[1]]
+  #f=jieguo[[2]]
   
-  initKesi=deltaMat %*% initMu
-  initNu = matrix(0, nrow=s, ncol=1)
-  
-  
-  initParams = list(initMu, initBeta, initLambda, initKesi, initNu)
+  initParams = list(initKesi,initBeta,initLambda)
   return(initParams)
 }
 
 #--------------------------- Initialization -------------------------------
 ## global variables
-p = 10 ; n = 100 ; r = p + n ; q = r ; s = n*(n-1)/2
-m = 0 ; epsilon = 1e-04
-v = 1 ; a = 0.01 ; b = 3.7; c = 1/n
+p = 10 ; n = 50 ; m = n*(n-1)/2 ; r = p + m ; q = r ;
+l = 0 ; epsilon = 1e-04
+b = 3.7; c = 1/n
 D1 = seq(1, 3, 0.5); D2 = seq(1, 3, 0.5)
 d1 = length(D1) ; d2 = length(D2)
 yitaMat = matrix(c(rep(D1,each=d2),rep(D2,d1)),ncol=2)
@@ -78,9 +77,8 @@ yVec = temp[[2]] # n * 1 ; # yi = y[i]
 beta=temp[[3]] #beta真实值
 mu=temp[[4]]  #mu真实值
 err=temp[[5]]
-eMat = diag(n) # n维单位阵
-zMat = rbind(eMat, xMat) # r * n
-deltaMat = matrix(0, nrow=s, ncol=n) # s * n
+
+deltaMat = matrix(0, nrow=m, ncol=n) # m * n
 for(i in seq(1, n-1, 1)){
   for(j in seq(i+1, n, 1)){
     ij=(i-1)*n - i*(i-1)/2 + (j-i)
@@ -89,6 +87,24 @@ for(i in seq(1, n-1, 1)){
   }
 }
 
+DMat = data.table::data.table()
+for(i in seq(1, n-2, 1)){
+  DMat_i = matrix(0, nrow=(n-i)*(n-i-1)/2, ncol=m)
+  for(j in seq(i+1, n-1, 1)){
+    ij = (i-1)*n - i*(i-1)/2 + (j-i)
+    for(k in seq(j+1, n, 1)){
+      ik = (i-1)*n - i*(i-1)/2 + (k-i)
+      jk = (j-1)*n - j*(j-1)/2 + (k-j)
+      ijk = (j-1-i)*(n-i) - (j-i)*(j-1-i)/2 + (k-j)
+      DMat_i[ijk,c(ij,ik,jk)] = c(-1, 1, -1)
+    }
+  }
+  DMat = rbind(DMat,DMat_i)
+}
+DMat = as.matrix(DMat) 
+
+eMat = diag(m) # m维单位阵
+zMat = rbind(eMat, t(deltaMat %*% t(xMat))) # r * m
 ## init Variables
 # 格式
 # initMu = matrix(0, nrow=n, ncol=1)
