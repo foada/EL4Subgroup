@@ -18,45 +18,25 @@ initXY.function = function(){
 
 initParams.function = function(){
   # 初始化 μ 及 β
-  initBeta = solve( xMat %*% t(xMat) ) %*% xMat %*% (yVec-mu)
-  initMu = yVec - t(xMat) %*% initBeta +rnorm(n, 0, 0.5)
+  #initBeta = solve( xMat %*% t(xMat) ) %*% xMat %*% (yVec-mu)
+  initBeta =beta+rnorm(p,0,0.1)
+  initBeta=matrix(initBeta,ncol=1)
+  initMu = mu +rnorm(n, 0, 0.1)
+  initMu =matrix(initMu,ncol=1)
   #初始化kesi和theta
   initKesi = deltaMat %*% initMu
-  initTheta = rbind(initKesi,initBeta)
+  #initTheta = rbind(initKesi,initBeta)
   
   # 初始化λ
   initLambda = matrix(0, nrow=r, ncol=1)
-  mFir=function(lambda){
-    g = gFunc(initKesi,initBeta)
-    logstarFir=sapply(1 + t(lambda) %*% g,logFuncFir)
-    lambdaFir=-rowSums(sapply(1:m,function(i){logstarFir[i]*g[,i]}))
-    return(matrix(lambdaFir,ncol=1))
+  #initLambda=optim.lambda(initKesi,initBeta,initLambda,yitaMat[1,2])
+  #initLambda=matrix(initLambda,ncol=1)
+  iter.max=30
+  for (iter.num in c(1:iter.max))
+  {
+    initLambda = sapply(1:r,iterateLambda.function,initKesi,initBeta,initLambda,yitaMat[1,2])
   }
-  mSec=function(lambda){
-    g = gFunc(initKesi,initBeta)
-    logstarSec=sapply(1 + t(lambda) %*% g,logFuncSec)
-    M=array(0,dim=c(r,r))
-    for(i in 1:m){
-      M=M+logstarSec[i]*g[,i]%*%t(g[,i])
-    }
-    gc() # 清除冗余内存
-    return(-M)
-  }
-  #Newton method
-  newton_metod=function(oldLambda){
-    r=1
-    #k=0
-    while (r>epsilon) {
-      newLambda=oldLambda-ginv(mSec(oldLambda))%*%mFir(oldLambda)
-      r= sqrt(sum(mFir(newLambda)^2))
-      oldLambda=newLambda
-      #k=k+1
-    }
-    return(oldLambda)
-  }
-  initLambda=newton_metod(initLambda)
-  #initLambda=jieguo[[1]]
-  #f=jieguo[[2]]
+  initLambda=matrix(initLambda,ncol=1)
   
   initParams = list(initKesi,initBeta,initLambda)
   return(initParams)
@@ -64,12 +44,21 @@ initParams.function = function(){
 
 #--------------------------- Initialization -------------------------------
 ## global variables
-p = 10 ; n = 50 ; m = n*(n-1)/2 ; r = p + m ; q = r ;
+p = 5 ; n = 10 ; m = n*(n-1)/2 ; r = p + m ; q = r ;
 l = 0 ; epsilon = 1e-04
 b = 3.7; c = 1/n
-D1 = seq(1, 3, 0.5); D2 = seq(1, 3, 0.5)
-d1 = length(D1) ; d2 = length(D2)
-yitaMat = matrix(c(rep(D1,each=d2),rep(D2,d1)),ncol=2)
+
+#penal tuning para
+#eta_1 for kesi, eta_2 for lambda
+eta_1.max <- 10/sqrt(n) # 30 10 5 3 1.5
+eta_1.min <- 5/sqrt(n) # 15 5 1 0.5 0.3
+d1 <- 5 
+eta_1.seq = exp(seq(log(eta_1.min),log(eta_1.max),len=d1)) 
+eta_2.max <- 20/sqrt(n) #10 20
+eta_2.min <- 10/sqrt(n)#1 5
+d2 <-  5 # 5 15
+eta_2.seq =  exp(seq(log(eta_2.min),log(eta_2.max),len=d2))  
+yitaMat = matrix(c(rep(eta_1.seq,each=d2),rep(eta_2.seq,d1)),ncol=2)
 
 temp = initXY.function()
 xMat = temp[[1]] # p * n ; # xi = t(x[, i])
