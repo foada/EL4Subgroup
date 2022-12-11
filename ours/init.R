@@ -4,7 +4,7 @@ initXY.function = function(){
   # 模拟自变量X, 得到数值矩阵xMat
   set.seed(123)
   sd = 1 ; pho = 0.5
-  V = (sd ^ 2) * sapply(1:p, function(x){pho ^ abs(x - c(1:p))})
+  V = (sd ^ 2) * sfSapply(1:p, function(x){pho ^ abs(x - c(1:p))})
   xMat = t( mvrnorm(n = n, mu = rep(0, p), V) )
   
   # 生成响应值yVec
@@ -31,10 +31,10 @@ initParams.function = function(){
   initLambda = matrix(0, nrow=r, ncol=1)
   #initLambda=optim.lambda(initKesi,initBeta,initLambda,yitaMat[1,2])
   #initLambda=matrix(initLambda,ncol=1)
-  iter.max=30
+  iter.max=60
   for (iter.num in c(1:iter.max))
   {
-    initLambda = sapply(1:r,iterateLambda.function,initKesi,initBeta,initLambda,yitaMat[1,2])
+    initLambda = sfSapply(1:r,iterateLambda2.function,initKesi,initBeta,initLambda,yitaMat[1,2])
   }
   initLambda=matrix(initLambda,ncol=1)
   

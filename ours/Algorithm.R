@@ -32,49 +32,57 @@ iterate.function = function(oldParams,yitaVec){
   oldKesi = oldParams[[1]]; oldBeta = oldParams[[2]]
   oldLambda = oldParams[[3]]
   
-  eps.tol_1 <- 0.005 
-  iter.max <- 10
+  kesiList = oldParams[[1]]
+  betaList=oldParams[[2]]
+  lambdaList=oldParams[[3]]
+  
+  eps.tol_1 <- 0.05 
+  iter.max <- 20
   
   for(count.num in 1:iter.max){
     temp=optim.kesibeta(oldKesi,oldBeta,oldLambda,yitaVec)
     oldKesi=temp[[1]]
     oldBeta=temp[[2]]
     oldLambda=temp[[3]]
-    if(count.num>2){
+    if(count.num>3){
       oldKesi[abs(oldKesi)<eps.tol_1]=0
     }
+    kesiList = cbind(kesiList,oldKesi)
+    betaList = cbind(betaList,oldBeta)
+    lambdaList = cbind(lambdaList,oldLambda)
   }
   newKesi=oldKesi
   newBeta = oldBeta
   newLambda = oldLambda
   
-  newParams = list(newKesi, newBeta, newLambda)
+  newParams = list(newKesi, newBeta, newLambda,kesiList,betaList,lambdaList)
   return(newParams)
 }
 
 
 iterateKesi.function = function(k, oldKesi, oldBeta, oldLambda, yita){
-  w <- 1e-10
+  #w <- 1e-10
   oldKesi_k = oldKesi[k]
   sijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
   uijkSeq = t(oldLambda) %*% gFuncFir(k)
   
-  logFirSeq = sapply(sijSeq,logFuncFir)
-  logSecSeq = sapply(sijSeq,logFuncSec)
+  logFirSeq = sfSapply(sijSeq,logFuncFir)
+  logSecSeq = sfSapply(sijSeq,logFuncSec)
   
   numerator = sum(logFirSeq * uijkSeq) + 
-    m*penalFuncFir(oldKesi_k,yita) + m*sum(DMat[,k])
+    m*penalFuncFir(oldKesi_k,yita)
   denominator = sum(logSecSeq * uijkSeq^2) +m*penalFuncSec(oldKesi_k,yita)
   
-  if (abs(denominator) <= w){ #denominator can not be zero
-    denominator <- denominator + w
-  }
-  temp.val=numerator/denominator
-  if (abs(temp.val) > 0.001)  temp.val <- sign(temp.val) * 0.001
+  #if (abs(denominator) <= w){ #denominator can not be zero
+  #  denominator <- denominator + w
+  #}
+  #temp.val=numerator/denominator
+  temp.val=numerator
+  if (abs(temp.val) > 0.01)  temp.val <- sign(temp.val) * 0.01
   
   newKesi_k = oldKesi_k - temp.val
 
-  #newLambda = sapply(1:r, iterateLambda.function,
+  #newLambda = sfSapply(1:r, iterateLambda.function,
   #                   oldLambda, newKesi, oldBeta, yitaVec[2]) 
   
   return(newKesi_k)
@@ -83,25 +91,26 @@ iterateKesi.function = function(k, oldKesi, oldBeta, oldLambda, yita){
 
 iterateBeta.function = function(k, oldKesi, oldBeta, oldLambda){
   # print(paste("k:",k))
-  w <- 1e-10
+  #w <- 1e-10
   oldBeta_k = oldBeta[k]
   sijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
   wijkSeq = t(oldLambda) %*% gFuncFir(m+k)
   
-  logFirSeq = sapply(sijSeq,logFuncFir)
-  logSecSeq = sapply(sijSeq,logFuncSec)
+  logFirSeq = sfSapply(sijSeq,logFuncFir)
+  logSecSeq = sfSapply(sijSeq,logFuncSec)
   
   numerator = sum(logFirSeq * wijkSeq)
   denominator = sum(logSecSeq * wijkSeq^2)
   
-  if (abs(denominator) <= w){ #denominator can not be zero
-    denominator <- denominator + w
-  }
-  temp.val=numerator/denominator
+  #if (abs(denominator) <= w){ #denominator can not be zero
+  #  denominator <- denominator + w
+  #}
+  #temp.val=numerator/denominator
+  temp.val=numerator
   if (abs(temp.val) > 0.001)  temp.val <- sign(temp.val) * 0.001
   newBeta_k = oldBeta_k - temp.val
 
-  #newLambda = sapply(1:r, iterateLambda.function,
+  #newLambda = sfSapply(1:r, iterateLambda.function,
   #                   oldLambda, oldKesi, newBeta, yita)
   
   return(newBeta_k)
@@ -109,20 +118,20 @@ iterateBeta.function = function(k, oldKesi, oldBeta, oldLambda){
 
 optim.kesibeta <- function(Kesi,Beta,Lambda,yitaVec)  #iter.max
 {
-  iter.max <- 30  #convergence????? 30 60 90
+  iter.max <- 20  #convergence????? 30 60 90
   eps.tol_2 <- 0.005 
   num_solve=(n-1)*(n-2)/2
   for (iter.num in c(1:iter.max))
   {
-    Kesi = sapply(1:m, iterateKesi.function,Kesi,Beta,Lambda,yitaVec[1])
+    Kesi = sfSapply(1:m, iterateKesi.function,Kesi,Beta,Lambda,yitaVec[1])
     Kesi=matrix(Kesi,ncol=1)
     
     KesiOrigin=Kesi[n:m] #迭代得到的
     KesiSolve=DMat[1:num_solve,1:n-1]%*%Kesi[1:n-1] #根据通解计算得到
-    supp_new=c(which(abs(KesiSolve-KesiOrigin)>0.01))
+    supp_new=c(which(abs(KesiSolve-KesiOrigin)>0.06))
     if(length(supp_new)>0) Kesi[supp_new+n-1]=KesiSolve[supp_new]
     
-    Beta = sapply(1:p, iterateBeta.function,Kesi,Beta,Lambda)
+    Beta = sfSapply(1:p, iterateBeta.function,Kesi,Beta,Lambda)
     Beta=matrix(Beta,ncol=1)
     Lambda=optim.lambda(Kesi,Beta,Lambda,yitaVec[2])
     Lambda=matrix(Lambda,ncol=1)
@@ -135,13 +144,13 @@ optim.kesibeta <- function(Kesi,Beta,Lambda,yitaVec)  #iter.max
 
 iterateLambda.function = function(s, oldKesi, oldBeta, oldLambda, yita){
   # print(paste("s:",s))
-  w <- 1e-10
+  #w <- 1e-10
   oldLambda_s = oldLambda[s]
   tijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
   gisThetaSeq = gFunc(oldKesi, oldBeta)[s,]
   
-  logFirSeq = sapply(tijSeq,logFuncFir)
-  logSecSeq = sapply(tijSeq,logFuncSec)
+  logFirSeq = sfSapply(tijSeq,logFuncFir)
+  logSecSeq = sfSapply(tijSeq,logFuncSec)
   
   if(s<=m){
     numerator = sum(logFirSeq * gisThetaSeq)-m*penalFuncFir(oldLambda_s,yita)
@@ -152,10 +161,11 @@ iterateLambda.function = function(s, oldKesi, oldBeta, oldLambda, yita){
     denominator = sum(logSecSeq * gisThetaSeq^2)
   }
   
-  if (abs(denominator) <= w){ #denominator can not be zero
-    denominator <- denominator + w
-  }
-  temp.val=numerator/denominator
+  #if (abs(denominator) <= w){ #denominator can not be zero
+  #  denominator <- denominator + w
+  #}
+  #temp.val=numerator/denominator
+  temp.val=numerator
   if (abs(temp.val) > 0.001)  temp.val <- sign(temp.val) * 0.001
   newLambda_s = oldLambda_s + temp.val
 
@@ -167,7 +177,7 @@ optim.lambda <- function(Kesi,Beta,Lambda,yita)  #iter.max
   iter.max <- 30  #convergence????? 30 60 90
   for (iter.num in c(1:iter.max))
   {
-    Lambda = sapply(1:r,iterateLambda.function,Kesi,Beta,Lambda,yita)
+    Lambda = sfSapply(1:r,iterateLambda.function,Kesi,Beta,Lambda,yita)
     Lambda=matrix(Lambda,ncol=1)
   }
   return(Lambda)
@@ -181,8 +191,8 @@ iterateLambda2.function = function(s, oldKesi, oldBeta, oldLambda, yita){
   tijSeq = 1 + t(oldLambda) %*% gFunc(oldKesi, oldBeta)
   gisThetaSeq = gFunc(oldKesi, oldBeta)[s,]
   
-  logFirSeq = sapply(tijSeq,logFuncFir)
-  logSecSeq = sapply(tijSeq,logFuncSec)
+  logFirSeq = sfSapply(tijSeq,logFuncFir)
+  logSecSeq = sfSapply(tijSeq,logFuncSec)
   
   if(s<=m){
     numerator = sum(logFirSeq * gisThetaSeq)-m*penalFuncFir(oldLambda_s,yita)

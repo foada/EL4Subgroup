@@ -91,6 +91,6 @@ lFunc = function(params,yitaVec){
   fir = sum(sapply(1 + t(lambda) %*% gFunc(kesi,beta), logFunc))
   sec = m * sum(sapply(kesi, penalFunc, yitaVec[1]))
   thr = m * sum(sapply(lambda[1:m], penalFunc,yitaVec[2])) #只对lambda的前m个分量做惩罚
-  fth = m * sum(DMat %*% kesi)
-  return(fir + sec - thr + fth)
+  #fth = m * sum(DMat %*% kesi)
+  return(fir + sec - thr )
 }
